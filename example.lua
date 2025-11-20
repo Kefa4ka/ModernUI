@@ -5,7 +5,7 @@
 ]]
 
 -- Завантажити бібліотеку
-local Library = loadstring(game:HttpGet("YOUR_RAW_URL_HERE"))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Kefa4ka/ModernUI/refs/heads/main/TokyoUI.lua"))()
 
 print("Tokyo UI Library завантажено!")
 
