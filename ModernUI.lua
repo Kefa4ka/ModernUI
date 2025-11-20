@@ -193,6 +193,93 @@ function ModernUI:CreateWindow(Config)
         end)
     end
 
+    --// Keybind List Window
+    local KeybindListFrame = Create("Frame", {
+        Name = "KeybindList",
+        Parent = ScreenGui,
+        BackgroundColor3 = ModernUI.Theme.MainColor,
+        Size = UDim2.new(0, 200, 0, 22), -- Initial size for title only
+        Position = UDim2.new(0, 10, 0.5, 0),
+        BorderSizePixel = 0,
+        Visible = false -- Hidden by default
+    })
+    CreateBorder(KeybindListFrame, ModernUI.Theme.AccentColor)
+    MakeDraggable(KeybindListFrame, KeybindListFrame)
+
+    local KeybindListTitle = Create("TextLabel", {
+        Parent = KeybindListFrame,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 22),
+        Font = ModernUI.Theme.Font,
+        Text = "Keybinds",
+        TextColor3 = ModernUI.Theme.AccentColor,
+        TextSize = 13
+    })
+
+    local KeybindListContainer = Create("Frame", {
+        Parent = KeybindListFrame,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 0, 0, 22),
+        Size = UDim2.new(1, 0, 1, -22),
+        ClipsDescendants = true
+    })
+
+    local KeybindListLayout = Create("UIListLayout", {
+        Parent = KeybindListContainer,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 2)
+    })
+
+    local ActiveKeybinds = {}
+
+    local function UpdateKeybindList()
+        -- Clear existing
+        for _, child in pairs(KeybindListContainer:GetChildren()) do
+            if child:IsA("Frame") then child:Destroy() end
+        end
+
+        local Count = 0
+        for Name, Data in pairs(ActiveKeybinds) do
+            Count = Count + 1
+            local Item = Create("Frame", {
+                Parent = KeybindListContainer,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 18)
+            })
+            
+            Create("TextLabel", {
+                Parent = Item,
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0, 5, 0, 0),
+                Size = UDim2.new(1, -10, 1, 0),
+                Font = ModernUI.Theme.Font,
+                Text = Name,
+                TextColor3 = ModernUI.Theme.TextColor,
+                TextSize = 12,
+                TextXAlignment = Enum.TextXAlignment.Left
+            })
+            
+            Create("TextLabel", {
+                Parent = Item,
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0, 5, 0, 0),
+                Size = UDim2.new(1, -10, 1, 0),
+                Font = ModernUI.Theme.Font,
+                Text = "[" .. Data.Key.Name .. "]",
+                TextColor3 = ModernUI.Theme.TextDark,
+                TextSize = 12,
+                TextXAlignment = Enum.TextXAlignment.Right
+            })
+        end
+
+        if Count > 0 then
+            KeybindListFrame.Visible = true
+            KeybindListFrame.Size = UDim2.new(0, 200, 0, 22 + (Count * 20) + 5)
+        else
+            KeybindListFrame.Visible = false
+        end
+    end
+
     --// Main Window
     local MainFrame = Create("Frame", {
         Name = "MainFrame",
@@ -396,10 +483,17 @@ function ModernUI:CreateWindow(Config)
             return ButtonFrame
         end
 
-        function Elements:Toggle(Text, Default, Callback)
+        function Elements:Toggle(Text, Default, Keybind, Callback)
             Default = Default or false
+            -- Handle optional Keybind argument
+            if typeof(Keybind) == "function" then
+                Callback = Keybind
+                Keybind = nil
+            end
+            
             Callback = Callback or function() end
             local Toggled = Default
+            local CurrentKey = Keybind
 
             local ToggleFrame = Create("TextButton", {
                 Parent = Page,
@@ -438,12 +532,70 @@ function ModernUI:CreateWindow(Config)
                 TextXAlignment = Enum.TextXAlignment.Left
             })
 
-            ToggleFrame.MouseButton1Click:Connect(function()
-                Toggled = not Toggled
+            -- Keybind Button (Small, next to label)
+            local KeyButton = Create("TextButton", {
+                Parent = ToggleFrame,
+                BackgroundTransparency = 1,
+                Position = UDim2.new(1, -60, 0, 0),
+                Size = UDim2.new(0, 60, 1, 0),
+                Font = ModernUI.Theme.Font,
+                Text = CurrentKey and "[" .. CurrentKey.Name .. "]" or "[-]",
+                TextColor3 = ModernUI.Theme.TextDark,
+                TextSize = 11,
+                TextXAlignment = Enum.TextXAlignment.Right
+            })
+
+            local function SetState(NewState)
+                Toggled = NewState
                 CheckMarker.Visible = Toggled
                 Label.TextColor3 = Toggled and ModernUI.Theme.TextColor or ModernUI.Theme.TextDark
+                
+                if Toggled and CurrentKey then
+                    ActiveKeybinds[Text] = {Key = CurrentKey}
+                else
+                    ActiveKeybinds[Text] = nil
+                end
+                UpdateKeybindList()
+                
                 Callback(Toggled)
+            end
+
+            ToggleFrame.MouseButton1Click:Connect(function()
+                SetState(not Toggled)
             end)
+
+            -- Keybind Logic
+            local Listening = false
+            KeyButton.MouseButton1Click:Connect(function()
+                Listening = true
+                KeyButton.Text = "[...]"
+                KeyButton.TextColor3 = ModernUI.Theme.AccentColor
+            end)
+
+            UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                if Listening and input.UserInputType == Enum.UserInputType.Keyboard then
+                    Listening = false
+                    CurrentKey = input.KeyCode
+                    KeyButton.Text = "[" .. CurrentKey.Name .. "]"
+                    KeyButton.TextColor3 = ModernUI.Theme.TextDark
+                    
+                    -- Update active keybinds if currently toggled
+                    if Toggled then
+                        ActiveKeybinds[Text] = {Key = CurrentKey}
+                        UpdateKeybindList()
+                    end
+                elseif not Listening and not gameProcessed and input.UserInputType == Enum.UserInputType.Keyboard then
+                    if CurrentKey and input.KeyCode == CurrentKey then
+                        SetState(not Toggled)
+                    end
+                end
+            end)
+            
+            -- Initialize
+            if Toggled and CurrentKey then
+                ActiveKeybinds[Text] = {Key = CurrentKey}
+                UpdateKeybindList()
+            end
         end
 
         function Elements:Slider(Text, Min, Max, Default, Callback)
@@ -529,6 +681,117 @@ function ModernUI:CreateWindow(Config)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     Dragging = false
                 end
+            end)
+        end
+        
+        function Elements:ColorPicker(Text, Default, Callback)
+            Default = Default or Color3.fromRGB(255, 255, 255)
+            Callback = Callback or function() end
+            local CurrentColor = Default
+            
+            local PickerFrame = Create("Frame", {
+                Parent = Page,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 26)
+            })
+            
+            local Label = Create("TextLabel", {
+                Parent = PickerFrame,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, -40, 1, 0),
+                Font = ModernUI.Theme.Font,
+                Text = Text,
+                TextColor3 = ModernUI.Theme.TextColor,
+                TextSize = ModernUI.Theme.TextSize,
+                TextXAlignment = Enum.TextXAlignment.Left
+            })
+            
+            local ColorPreview = Create("TextButton", {
+                Parent = PickerFrame,
+                BackgroundColor3 = CurrentColor,
+                Position = UDim2.new(1, -40, 0, 3),
+                Size = UDim2.new(0, 40, 0, 20),
+                Text = "",
+                BorderSizePixel = 0
+            })
+            CreateBorder(ColorPreview, ModernUI.Theme.BorderColor)
+            
+            local PickerPopup = Create("Frame", {
+                Parent = Page,
+                BackgroundColor3 = ModernUI.Theme.SecondaryColor,
+                Size = UDim2.new(1, 0, 0, 100),
+                Visible = false,
+                BorderSizePixel = 0,
+                ClipsDescendants = true
+            })
+            CreateBorder(PickerPopup, ModernUI.Theme.BorderColor)
+            
+            local function UpdateColor()
+                ColorPreview.BackgroundColor3 = CurrentColor
+                Callback(CurrentColor)
+            end
+            
+            local function CreateSlider(Name, YPos, ColorComponent)
+                local SliderBg = Create("Frame", {
+                    Parent = PickerPopup,
+                    BackgroundColor3 = ModernUI.Theme.MainColor,
+                    Position = UDim2.new(0, 10, 0, YPos),
+                    Size = UDim2.new(1, -20, 0, 20),
+                    BorderSizePixel = 0
+                })
+                
+                local SliderFill = Create("Frame", {
+                    Parent = SliderBg,
+                    BackgroundColor3 = ModernUI.Theme.AccentColor,
+                    Size = UDim2.new(select(ColorComponent, CurrentColor.r, CurrentColor.g, CurrentColor.b), 0, 1, 0),
+                    BorderSizePixel = 0
+                })
+                
+                local Trigger = Create("TextButton", {
+                    Parent = SliderBg,
+                    BackgroundTransparency = 1,
+                    Size = UDim2.new(1, 0, 1, 0),
+                    Text = ""
+                })
+                
+                local Dragging = false
+                local function Update(input)
+                    local Pos = math.clamp((input.Position.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X, 0, 1)
+                    SliderFill.Size = UDim2.new(Pos, 0, 1, 0)
+                    
+                    local r, g, b = CurrentColor.r, CurrentColor.g, CurrentColor.b
+                    if ColorComponent == 1 then r = Pos
+                    elseif ColorComponent == 2 then g = Pos
+                    elseif ColorComponent == 3 then b = Pos end
+                    
+                    CurrentColor = Color3.new(r, g, b)
+                    UpdateColor()
+                end
+                
+                Trigger.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                        Dragging = true
+                        Update(input)
+                    end
+                end)
+                
+                UserInputService.InputChanged:Connect(function(input)
+                    if Dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                        Update(input)
+                    end
+                end)
+                
+                UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 then Dragging = false end
+                end)
+            end
+            
+            CreateSlider("R", 10, 1)
+            CreateSlider("G", 40, 2)
+            CreateSlider("B", 70, 3)
+            
+            ColorPreview.MouseButton1Click:Connect(function()
+                PickerPopup.Visible = not PickerPopup.Visible
             end)
         end
 
